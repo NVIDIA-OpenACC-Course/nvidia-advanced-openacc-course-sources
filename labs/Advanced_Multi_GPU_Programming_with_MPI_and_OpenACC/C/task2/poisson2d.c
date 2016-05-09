@@ -33,11 +33,6 @@ real Aref[NY][NX];
 real Anew[NY][NX];
 real rhs[NY][NX];
 
-real to_left[NY];
-real from_left[NY];
-real to_right[NY];
-real from_right[NY];
-
 int main(int argc, char** argv)
 {
     int iter_max = 1000;
@@ -60,14 +55,15 @@ int main(int argc, char** argv)
         }
         return -1;
     }
-    
-    dim2 size2d = size_to_2Dsize(size);
-    int sizex = size2d.x;
-    int sizey = size2d.y;
+
+    //TODO: Use dim2 size_to_2Dsize( int size ) to create 2D Layout
+    int sizex = 1;
+    int sizey = size;
     assert(sizex*sizey == size);
     
-    int rankx = rank%sizex;
-    int ranky = rank/sizex;
+    //TODO: Compute 2D ranks from 1D MPI rank
+    int rankx = 0;      //hint: use %sizex
+    int ranky = rank;   //hint: use /sizex
 
     memset(A, 0, NY * NX * sizeof(real));
     memset(Aref, 0, NY * NX * sizeof(real));
@@ -113,7 +109,7 @@ int main(int argc, char** argv)
 
     if ( rank == 0) printf("Calculate reference solution and time serial execution.\n");
     StartTimer();
-    laplace2d_serial( rank, iter_max, tol );
+    poisson2d_serial( rank, iter_max, tol );
     double runtime_serial = GetTimer();
 
     //Wait for all processes to ensure correct timing of the parallel version
@@ -123,7 +119,7 @@ int main(int argc, char** argv)
     int iter  = 0;
     real error = 1.0;
     
-    #pragma acc data copy(A) copyin(rhs) create(Anew,to_left,from_left,to_right,from_right)
+    #pragma acc data copy(A) copyin(rhs) create(Anew)
     while ( error > tol && iter < iter_max )
     {
         error = 0.0;
@@ -155,8 +151,9 @@ int main(int argc, char** argv)
         //Periodic boundary conditions
         int topy    = (ranky == 0) ? (sizey-1) : ranky-1;
         int bottomy = (ranky == (sizey-1)) ? 0 : ranky+1;
-        int top    = topy    * sizex + rankx;
-        int bottom = bottomy * sizex + rankx;
+        //TODO: map topy,bottomy back to 1D MPI ranks
+        int top    = topy;
+        int bottom = bottomy;
         #pragma acc host_data use_device( A )
         {
             //1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end) from bottom
@@ -167,22 +164,10 @@ int main(int argc, char** argv)
         }
         
         #pragma acc kernels
-        for( int iy = iy_start; iy < iy_end; iy++ )
+        for (int iy = iy_start; iy < iy_end; iy++)
         {
-                to_left[iy]  = A[iy][ix_start];
-                to_right[iy] = A[iy][ix_end-1];
-        }
-        #pragma acc kernels
-        for( int iy = iy_start; iy < iy_end; iy++ )
-        {
-                from_right[iy] = to_left[iy];
-                from_left[iy] = to_right[iy];
-        }
-        #pragma acc kernels
-        for( int iy = iy_start; iy < iy_end; iy++ )
-        {
-                A[iy][ix_start-1] = from_left[iy];
-                A[iy][ix_end]     = from_right[iy];
+                A[iy][0]      = A[iy][(NX-2)];
+                A[iy][(NX-1)] = A[iy][1];
         }
         
         if(rank == 0 && (iter % 100) == 0) printf("%5d, %0.6f\n", iter, error);
@@ -203,4 +188,4 @@ int main(int argc, char** argv)
     return 0;
 }
 
-#include "laplace2d_serial.h"
+#include "poisson2d_serial.h"

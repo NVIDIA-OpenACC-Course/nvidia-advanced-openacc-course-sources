@@ -17,7 +17,7 @@
 #ifndef LAPLACE2D_SERIAL_H
 #define LAPLACE2D_SERIAL_H
 
-void laplace2d_serial( int rank, int iter_max, real tol )
+void poisson2d_serial( int rank, int iter_max, real tol )
 {
     int iter  = 0;
     real error = 1.0;

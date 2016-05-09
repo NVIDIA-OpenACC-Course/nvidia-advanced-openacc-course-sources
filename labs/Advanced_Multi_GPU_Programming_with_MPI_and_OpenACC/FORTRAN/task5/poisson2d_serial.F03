@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-SUBROUTINE laplace2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
+SUBROUTINE poisson2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
     IMPLICIT NONE
     INTEGER, INTENT(IN) :: nx, ny, iter_max, mpi_rank
     REAL, INTENT(IN) :: tol
@@ -58,7 +58,7 @@ SUBROUTINE laplace2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
         iter = iter+1
     END DO
     !$acc end data
-END SUBROUTINE laplace2d_serial
+END SUBROUTINE poisson2d_serial
 
 LOGICAL FUNCTION check_results( mpi_rank, ix_start, ix_end, iy_start, iy_end, nx, ny, tol, a, a_ref )
     USE mpi
@@ -90,3 +90,16 @@ LOGICAL FUNCTION check_results( mpi_rank, ix_start, ix_end, iy_start, iy_end, nx
     END IF
     check_results = no_errors
 END FUNCTION check_results
+
+SUBROUTINE size_to_2Dsize(mpi_size, mpi_sizex, mpi_sizey)
+    IMPLICIT NONE
+    INTEGER, INTENT(IN) :: mpi_size
+    INTEGER, INTENT(OUT) :: mpi_sizex, mpi_sizey
+    INTEGER, DIMENSION(2,16), PARAMETER :: size_to_size2d_map = reshape( &
+        (/ 1,1 , 2,1 , 3,1  , 2,2 , &
+           5,1 , 3,2 , 7,1  , 4,2 , &
+           3,3 , 5,2 , 11,1 , 6,2 , &
+          13,1 , 7,2 , 5,3  , 4,4 /), (/ 2, 16 /) )
+    mpi_sizex = size_to_size2d_map(2,mpi_size)
+    mpi_sizey = size_to_size2d_map(1,mpi_size)
+END SUBROUTINE size_to_2Dsize

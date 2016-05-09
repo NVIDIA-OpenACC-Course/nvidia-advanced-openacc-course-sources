@@ -103,7 +103,7 @@ int max( int a, int b)
     return a > b ? a : b;
 }
 
-void laplace2d_serial( int rank, int iter_max, real tol );
+void poisson2d_serial( int rank, int iter_max, real tol );
 
 int check_results( int rank, int ix_start, int ix_end,  int iy_start, int iy_end, real tol );
 

@@ -47,24 +47,6 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     
-    if ( size > MAX_MPI_SIZE )
-    {
-        if ( 0 == rank )
-        {
-            fprintf(stderr,"ERROR: Only up to %d MPI ranks are supported.\n",MAX_MPI_SIZE);
-        }
-        return -1;
-    }
-
-    //TODO: Use dim2 size_to_2Dsize( int size ) to create 2D Layout
-    int sizex = 1;
-    int sizey = size;
-    assert(sizex*sizey == size);
-    
-    //TODO: Compute 2D ranks from 1D MPI rank
-    int rankx = 0;      //hint: use %sizex
-    int ranky = rank;   //hint: use /sizex
-
     memset(A, 0, NY * NX * sizeof(real));
     memset(Aref, 0, NY * NX * sizeof(real));
     
@@ -95,11 +77,11 @@ int main(int argc, char** argv)
     int ix_start = 1;
     int ix_end   = (NX - 1);
 
-    // Ensure correctness if NY%sizey != 0
-    int chunk_sizey = ceil( (1.0*NY)/sizey );
+    // Ensure correctness if NY%size != 0
+    int chunk_size = ceil( (1.0*NY)/size );
 
-    int iy_start = ranky * chunk_sizey;
-    int iy_end   = iy_start + chunk_sizey;
+    int iy_start = rank * chunk_size;
+    int iy_end   = iy_start + chunk_size;
 
     // Do not process boundaries
     iy_start = max( iy_start, 1 );
@@ -109,7 +91,7 @@ int main(int argc, char** argv)
 
     if ( rank == 0) printf("Calculate reference solution and time serial execution.\n");
     StartTimer();
-    laplace2d_serial( rank, iter_max, tol );
+    poisson2d_serial( rank, iter_max, tol );
     double runtime_serial = GetTimer();
 
     //Wait for all processes to ensure correct timing of the parallel version
@@ -138,9 +120,17 @@ int main(int argc, char** argv)
         real globalerror = 0.0;
         MPI_Allreduce( &error, &globalerror, 1, MPI_REAL_TYPE, MPI_MAX, MPI_COMM_WORLD );
         error = globalerror;
-        
+
+
         #pragma acc kernels
-        for (int iy = iy_start; iy < iy_end; iy++)
+        for( int ix = ix_start; ix < ix_end; ix++ )
+        {
+            A[iy_start][ix] = Anew[iy_start][ix];
+            A[iy_end-1][ix] = Anew[iy_end-1][ix];
+        }
+        
+        #pragma acc kernels async
+        for (int iy = iy_start+1; iy < iy_end-1; iy++)
         {
             for( int ix = ix_start; ix < ix_end; ix++ )
             {
@@ -149,11 +139,8 @@ int main(int argc, char** argv)
         }
 
         //Periodic boundary conditions
-        int topy    = (ranky == 0) ? (sizey-1) : ranky-1;
-        int bottomy = (ranky == (sizey-1)) ? 0 : ranky+1;
-        //TODO: map topy,bottomy back to 1D MPI ranks
-        int top    = topy;
-        int bottom = bottomy;
+        int top    = (rank == 0) ? (size-1) : rank-1;
+        int bottom = (rank == (size-1)) ? 0 : rank+1;
         #pragma acc host_data use_device( A )
         {
             //1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end) from bottom
@@ -162,6 +149,7 @@ int main(int argc, char** argv)
             //2. Sent row (iy_end-1) (last modified row) to bottom receive upper boundary (iy_start-1) from top
             MPI_Sendrecv( &A[(iy_end-1)][ix_start], (ix_end-ix_start), MPI_REAL_TYPE, bottom, 0, &A[(iy_start-1)][ix_start], (ix_end-ix_start), MPI_REAL_TYPE, top   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
         }
+        #pragma acc wait
         
         #pragma acc kernels
         for (int iy = iy_start; iy < iy_end; iy++)
@@ -180,7 +168,7 @@ int main(int argc, char** argv)
 
     if (check_results( rank, ix_start, ix_end, iy_start, iy_end, tol ) && rank == 0)
     {
-        printf( "Num GPUs: %d with a (%d,%d) layout.\n", size, sizey,sizex );
+        printf( "Num GPUs: %d.\n", size );
         printf( "%dx%d: 1 GPU: %8.4f s, %d GPUs: %8.4f s, speedup: %8.2f, efficiency: %8.2f%\n", NY,NX, runtime_serial/ 1000.0, size, runtime/ 1000.0, runtime_serial/runtime, runtime_serial/(size*runtime)*100 );
     }
 
@@ -188,4 +176,4 @@ int main(int argc, char** argv)
     return 0;
 }
 
-#include "laplace2d_serial.h"
+#include "poisson2d_serial.h"

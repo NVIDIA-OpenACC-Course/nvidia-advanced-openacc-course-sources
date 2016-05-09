@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-PROGRAM laplace2d
+PROGRAM poisson2d
     USE openacc
     USE mpi
     IMPLICIT NONE
@@ -68,7 +68,6 @@ PROGRAM laplace2d
     call acc_init( device_type )
 #endif
    
-    !TODO: set first (ix_start) and last (ix_end) column to be processed by this rank.
     ix_start = 2
     ix_end   = nx-1
     
@@ -87,7 +86,7 @@ PROGRAM laplace2d
         WRITE(*,*) 'Calculate reference solution and time serial execution.'
     END IF
     CALL cpu_time(start)
-    CALL laplace2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
+    CALL poisson2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
     CALL cpu_time(finish)
     runtime_serial = finish-start
     
@@ -145,40 +144,10 @@ PROGRAM laplace2d
             CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, top   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
         !$acc end host_data
         
-        leftx = mpi_rankx-1
-        IF ( mpi_rankx == 0 ) THEN
-            leftx = mpi_sizex-1
-        END IF
-        rightx = mpi_rankx+1
-        IF ( mpi_rankx == mpi_sizex-1 ) THEN
-            rightx = 0
-        END IF
-        left = mpi_ranky * mpi_sizex + leftx
-        right = mpi_ranky * mpi_sizex + rightx
         !$acc kernels
         DO iy = iy_start, iy_end
-            to_left(iy) = a(ix_start,iy)
-            to_right(iy) = a(ix_end,iy)
-        END DO
-        !$acc end kernels
-        !TODO: Send to_left to left, to_right to right, receive from_left from_left and from_right from right instead of copying
-        !$acc kernels
-        DO iy = iy_start, iy_end
-            from_right(iy) = to_left(iy)
-            from_left(iy) = to_right(iy)
-        END DO
-        !$acc end kernels
-        !$acc host_data use_device( A )
-            !TODO: 1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
-            !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
-
-            !TODO: 2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
-            !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
-        !$acc end host_data
-        !$acc kernels
-        DO iy = iy_start, iy_end
-            a(ix_start-1,iy) = from_left(iy)
-            a(ix_end+1,iy) = from_right(iy)
+            a(1,iy) = a(nx-1,iy)
+            a(nx,iy) = a(2,iy)
         END DO
         !$acc end kernels
 
@@ -202,4 +171,4 @@ PROGRAM laplace2d
     END IF
     !Finalize MPI
     CALL MPI_Finalize(ierror)
-END PROGRAM laplace2d
+END PROGRAM poisson2d

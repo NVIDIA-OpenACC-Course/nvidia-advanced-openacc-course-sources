@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-SUBROUTINE laplace2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
+SUBROUTINE poisson2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
     IMPLICIT NONE
     INTEGER, INTENT(IN) :: nx, ny, iter_max, mpi_rank
     REAL, INTENT(IN) :: tol
@@ -58,7 +58,7 @@ SUBROUTINE laplace2d_serial(nx, ny, iter_max, mpi_rank,tol,a_ref, a_new,rhs)
         iter = iter+1
     END DO
     !$acc end data
-END SUBROUTINE laplace2d_serial
+END SUBROUTINE poisson2d_serial
 
 LOGICAL FUNCTION check_results( mpi_rank, ix_start, ix_end, iy_start, iy_end, nx, ny, tol, a, a_ref )
     USE mpi

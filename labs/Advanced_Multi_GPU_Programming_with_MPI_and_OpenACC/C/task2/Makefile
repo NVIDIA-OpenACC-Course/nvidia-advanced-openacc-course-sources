@@ -10,23 +10,23 @@ else ifeq ($(COMPILER),PGI-multicore)
 endif
 all: run
 
-laplace2d: laplace2d.c common.h laplace2d_serial.h Makefile
-	$(CC) $(CFLAGS) laplace2d.c -o laplace2d
+poisson2d: poisson2d.c common.h poisson2d_serial.h Makefile
+	$(CC) $(CFLAGS) poisson2d.c -o poisson2d
 
 clean:
-	rm -f laplace2d laplace2d.solution laplace2d.*.nvprof laplace2d.solution.*.nvprof
+	rm -f poisson2d poisson2d.solution poisson2d.*.nvprof poisson2d.solution.*.nvprof
 
-run: laplace2d
-	mpirun -np 4 ./laplace2d
+run: poisson2d
+	mpirun -np 4 ./poisson2d
 
-profile: laplace2d
-	mpirun -np 4 nvprof --process-name "MPI %q{OMPI_COMM_WORLD_RANK}" --context-name "MPI %q{OMPI_COMM_WORLD_RANK}" -o laplace2d.%q{OMPI_COMM_WORLD_RANK}.nvprof ./laplace2d
+profile: poisson2d
+	mpirun -np 4 nvprof --process-name "MPI %q{OMPI_COMM_WORLD_RANK}" --context-name "MPI %q{OMPI_COMM_WORLD_RANK}" -o poisson2d.%q{OMPI_COMM_WORLD_RANK}.nvprof ./poisson2d
 
-laplace2d.solution: laplace2d.solution.c common.h laplace2d_serial.h Makefile
-	$(CC) $(CFLAGS) laplace2d.solution.c -o laplace2d.solution
+poisson2d.solution: poisson2d.solution.c common.h poisson2d_serial.h Makefile
+	$(CC) $(CFLAGS) poisson2d.solution.c -o poisson2d.solution
 
-solution: laplace2d.solution
-	mpirun -np 4 ./laplace2d.solution
+solution: poisson2d.solution
+	mpirun -np 4 ./poisson2d.solution
 
-profile.solution: laplace2d.solution
-	mpirun -np 4 nvprof --process-name "MPI %q{OMPI_COMM_WORLD_RANK}" --context-name "MPI %q{OMPI_COMM_WORLD_RANK}" -o laplace2d.solution.%q{OMPI_COMM_WORLD_RANK}.nvprof ./laplace2d.solution
+profile.solution: poisson2d.solution
+	mpirun -np 4 nvprof --process-name "MPI %q{OMPI_COMM_WORLD_RANK}" --context-name "MPI %q{OMPI_COMM_WORLD_RANK}" -o poisson2d.solution.%q{OMPI_COMM_WORLD_RANK}.nvprof ./poisson2d.solution

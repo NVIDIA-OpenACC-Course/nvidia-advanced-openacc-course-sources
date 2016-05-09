@@ -113,7 +113,7 @@ int main(int argc, char** argv)
 
     if ( rank == 0) printf("Calculate reference solution and time serial execution.\n");
     StartTimer();
-    laplace2d_serial( rank, iter_max, tol );
+    poisson2d_serial( rank, iter_max, tol );
     double runtime_serial = GetTimer();
 
     //Wait for all processes to ensure correct timing of the parallel version
@@ -205,4 +205,4 @@ int main(int argc, char** argv)
     return 0;
 }
 
-#include "laplace2d_serial.h"
+#include "poisson2d_serial.h"

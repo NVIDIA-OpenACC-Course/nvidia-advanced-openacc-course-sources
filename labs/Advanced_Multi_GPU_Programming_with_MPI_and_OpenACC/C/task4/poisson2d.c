@@ -96,15 +96,9 @@ int main(int argc, char** argv)
     acc_init(device_type);
 #endif /*_OPENACC*/
 
-    // Ensure correctness if NX%sizex != 0
-    int chunk_sizex = ceil( (1.0*NX)/sizex );
-
-    int ix_start = rankx * chunk_sizex;
-    int ix_end   = ix_start + chunk_sizex;
-
-    // Do not process boundaries
-    ix_start = max( ix_start, 1 );
-    ix_end = min( ix_end, NX - 1 );
+    //TODO: set first (ix_start) and last (ix_end) column to be processed by this rank.
+    int ix_start = 1;
+    int ix_end   = (NX - 1);
 
     // Ensure correctness if NY%sizey != 0
     int chunk_sizey = ceil( (1.0*NY)/sizey );
@@ -120,7 +114,7 @@ int main(int argc, char** argv)
 
     if ( rank == 0) printf("Calculate reference solution and time serial execution.\n");
     StartTimer();
-    laplace2d_serial( rank, iter_max, tol );
+    poisson2d_serial( rank, iter_max, tol );
     double runtime_serial = GetTimer();
 
     //Wait for all processes to ensure correct timing of the parallel version
@@ -151,21 +145,7 @@ int main(int argc, char** argv)
         error = globalerror;
         
         #pragma acc kernels
-        for( int ix = ix_start; ix < ix_end; ix++ )
-        {
-            A[iy_start][ix] = Anew[iy_start][ix];
-            A[(iy_end-1)][ix] = Anew[(iy_end-1)][ix];
-        }
-        
-        #pragma acc kernels async(2)
-        for( int iy = iy_start; iy < iy_end; iy++ )
-        {
-                to_left[iy]  = Anew[iy][ix_start];
-                to_right[iy] = Anew[iy][ix_end-1];
-        }
-        
-        #pragma acc kernels async(1)
-        for (int iy = (iy_start+1); iy < (iy_end-1); iy++)
+        for (int iy = iy_start; iy < iy_end; iy++)
         {
             for( int ix = ix_start; ix < ix_end; ix++ )
             {
@@ -191,14 +171,30 @@ int main(int argc, char** argv)
         int rightx = (rankx == (sizex-1)) ? 0 : rankx+1;
         int left   = ranky * sizex + leftx;
         int right  = ranky * sizex + rightx;
-        #pragma acc wait(2)
+        #pragma acc kernels
+        for( int iy = iy_start; iy < iy_end; iy++ )
+        {
+                to_left[iy]  = A[iy][ix_start];
+                to_right[iy] = A[iy][ix_end-1];
+        }
+        //TODO: Send to_left to left, to_right to right, receive from_left from_left and from_right from right instead of copying
+        #pragma acc kernels
+        for( int iy = iy_start; iy < iy_end; iy++ )
+        {
+                from_right[iy] = to_left[iy];
+                from_left[iy] = to_right[iy];
+        }
         #pragma acc host_data use_device( to_left, from_left, to_right, from_right )
         {
-            //1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
-            MPI_Sendrecv( to_left+iy_start, (iy_end-iy_start), MPI_REAL_TYPE, left   , 0, from_right+iy_start, (iy_end-iy_start), MPI_REAL_TYPE, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
+            //TODO: 1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
+            //MPI_Sendrecv(const void *sendbuf, int sendcount, MPI_REAL_TYPE, int dest, 0,
+            //                       void *recvbuf, int recvcount, MPI_REAL_TYPE, int source, 0,
+            //                 MPI_COMM_WORLD, MPI_STATUS_IGNORE );
 
-            //2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
-            MPI_Sendrecv( to_right+iy_start, (iy_end-iy_start), MPI_REAL_TYPE, right , 0, from_left+iy_start, (iy_end-iy_start), MPI_REAL_TYPE, left  , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE );
+            //TODO: 2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
+            //MPI_Sendrecv(const void *sendbuf, int sendcount, MPI_REAL_TYPE, int dest, 0,
+            //                       void *recvbuf, int recvcount, MPI_REAL_TYPE, int source, 0,
+            //                 MPI_COMM_WORLD, MPI_STATUS_IGNORE );
         }
         #pragma acc kernels
         for( int iy = iy_start; iy < iy_end; iy++ )
@@ -207,7 +203,6 @@ int main(int argc, char** argv)
                 A[iy][ix_end]     = from_right[iy];
         }
         
-        #pragma acc wait
         if(rank == 0 && (iter % 100) == 0) printf("%5d, %0.6f\n", iter, error);
         
         iter++;
@@ -226,4 +221,4 @@ int main(int argc, char** argv)
     return 0;
 }
 
-#include "laplace2d_serial.h"
+#include "poisson2d_serial.h"

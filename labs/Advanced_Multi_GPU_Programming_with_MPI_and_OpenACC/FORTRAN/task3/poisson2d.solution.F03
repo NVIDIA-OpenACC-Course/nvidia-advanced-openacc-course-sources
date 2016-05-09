@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-PROGRAM laplace2d
+PROGRAM poisson2d
     USE openacc
     USE mpi
     IMPLICIT NONE
@@ -35,17 +35,15 @@ PROGRAM laplace2d
     CALL MPI_Comm_rank(MPI_COMM_WORLD,mpi_rank,ierror)
     CALL MPI_Comm_size(MPI_COMM_WORLD,mpi_size,ierror)
     
-    !TODO: Use size_to_2Dsize(mpi_size, mpi_sizex, mpi_sizey) to create 2D Layout 
-    mpi_sizex = 1
-    mpi_sizey = mpi_size
+    CALL size_to_2Dsize(mpi_size, mpi_sizex, mpi_sizey)
     
     IF ( mpi_size /= (mpi_sizex*mpi_sizey) ) THEN
         WRITE(*,*) 'mpi_size = ', mpi_size , ' /= ', mpi_sizex, '*', mpi_sizey , ' mpi_sizex*mpi_sizey'
         CALL MPI_ABORT(MPI_COMM_WORLD, 1, ierror)
     END IF
     
-    mpi_rankx = 0
-    mpi_ranky = mpi_rank
+    mpi_rankx = MOD( mpi_rank, mpi_sizex )
+    mpi_ranky = mpi_rank/mpi_sizex
     
     a = 0.0
     a_ref = 0.0
@@ -88,7 +86,7 @@ PROGRAM laplace2d
         WRITE(*,*) 'Calculate reference solution and time serial execution.'
     END IF
     CALL cpu_time(start)
-    CALL laplace2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
+    CALL poisson2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
     CALL cpu_time(finish)
     runtime_serial = finish-start
     
@@ -135,9 +133,8 @@ PROGRAM laplace2d
         IF ( mpi_ranky == mpi_sizey-1 ) THEN
             bottomy = 0
         END IF
-        !TODO: map topy,bottomy back to 1D MPI ranks
-        top = topy
-        bottom = bottomy
+        top = topy * mpi_sizex + mpi_rankx
+        bottom = bottomy * mpi_sizex + mpi_rankx
         
         !$acc host_data use_device( A )
             !1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end+1) from bottom
@@ -149,8 +146,20 @@ PROGRAM laplace2d
         
         !$acc kernels
         DO iy = iy_start, iy_end
-            a(1,iy) = a(nx-1,iy)
-            a(nx,iy) = a(2,iy)
+            to_left(iy) = a(ix_start,iy)
+            to_right(iy) = a(ix_end,iy)
+        END DO
+        !$acc end kernels
+        !$acc kernels
+        DO iy = iy_start, iy_end
+            from_right(iy) = to_left(iy)
+            from_left(iy) = to_right(iy)
+        END DO
+        !$acc end kernels
+        !$acc kernels
+        DO iy = iy_start, iy_end
+            a(ix_start-1,iy) = from_left(iy)
+            a(ix_end+1,iy) = from_right(iy)
         END DO
         !$acc end kernels
 
@@ -174,4 +183,4 @@ PROGRAM laplace2d
     END IF
     !Finalize MPI
     CALL MPI_Finalize(ierror)
-END PROGRAM laplace2d
+END PROGRAM poisson2d

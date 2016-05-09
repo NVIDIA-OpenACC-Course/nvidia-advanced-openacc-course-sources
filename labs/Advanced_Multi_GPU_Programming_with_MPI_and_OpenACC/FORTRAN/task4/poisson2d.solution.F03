@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-PROGRAM laplace2d
+PROGRAM poisson2d
     USE openacc
     USE mpi
     IMPLICIT NONE
@@ -93,7 +93,7 @@ PROGRAM laplace2d
         WRITE(*,*) 'Calculate reference solution and time serial execution.'
     END IF
     CALL cpu_time(start)
-    CALL laplace2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
+    CALL poisson2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
     CALL cpu_time(finish)
     runtime_serial = finish-start
     
@@ -124,21 +124,7 @@ PROGRAM laplace2d
         error = globalerror
         
         !$acc kernels
-        DO ix = ix_start, ix_end
-            a(ix,iy_start) = a_new(ix,iy_start)
-            a(ix,iy_end) = a_new(ix,iy_end)
-        END DO
-        !$acc end kernels
-        
-        !$acc kernels async(2)
         DO iy = iy_start, iy_end
-            to_left(iy) = a_new(ix_start,iy)
-            to_right(iy) = a_new(ix_end,iy)
-        END DO
-        !$acc end kernels
-        
-        !$acc kernels async(1)
-        DO iy = iy_start+1, iy_end-1
             DO ix = ix_start, ix_end
                 a(ix,iy) = a_new(ix,iy)
             END DO
@@ -175,7 +161,12 @@ PROGRAM laplace2d
         END IF
         left = mpi_ranky * mpi_sizex + leftx
         right = mpi_ranky * mpi_sizex + rightx
-        !$acc wait(2)
+        !$acc kernels
+        DO iy = iy_start, iy_end
+            to_left(iy) = a(ix_start,iy)
+            to_right(iy) = a(ix_end,iy)
+        END DO
+        !$acc end kernels
         !$acc host_data use_device( A )
             !1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
             CALL MPI_Sendrecv( to_left(iy_start), (iy_end-iy_start)+1, MPI_REAL, left   , 0, from_right(iy_start), (iy_end-iy_start)+1, MPI_REAL, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
@@ -190,7 +181,6 @@ PROGRAM laplace2d
         END DO
         !$acc end kernels
 
-        !$acc wait
         IF ( mpi_rank == 0 .AND. ( iter == 1 .OR. MOD( iter, 100 ) == 0 ) ) THEN
             WRITE(*,"('  ',I4,' ',F8.6)") iter, error
         END IF
@@ -211,4 +201,4 @@ PROGRAM laplace2d
     END IF
     !Finalize MPI
     CALL MPI_Finalize(ierror)
-END PROGRAM laplace2d
+END PROGRAM poisson2d

@@ -12,7 +12,7 @@
 !  See the License for the specific language governing permissions and
 !  limitations under the License.
 
-PROGRAM laplace2d
+PROGRAM poisson2d
     USE openacc
     USE mpi
     IMPLICIT NONE
@@ -67,16 +67,10 @@ PROGRAM laplace2d
     !Call acc_init after acc_set_device_num to avoid multiple contexts on device 0 in multi GPU systems
     call acc_init( device_type )
 #endif
-    
-    !set first and last column to be processed by this rank.
-    !Ensure correctness if ny%size != 0
-    chunk_sizex = CEILING( (1.0*nx)/mpi_sizex )
-    ix_start = mpi_rankx * chunk_sizex
-    ix_end = ix_start + chunk_sizex - 1
-    
-    !Do not process boundaries
-    ix_start = MAX( ix_start, 2 )
-    ix_end = MIN( ix_end, nx-1 )
+   
+    !TODO: set first (ix_start) and last (ix_end) column to be processed by this rank.
+    ix_start = 2
+    ix_end   = nx-1
     
     !set first and last row to be processed by this rank.
     !Ensure correctness if ny%size != 0
@@ -93,7 +87,7 @@ PROGRAM laplace2d
         WRITE(*,*) 'Calculate reference solution and time serial execution.'
     END IF
     CALL cpu_time(start)
-    CALL laplace2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
+    CALL poisson2d_serial( nx, ny, iter_max, mpi_rank, tol, a_ref, a_new, rhs )
     CALL cpu_time(finish)
     runtime_serial = finish-start
     
@@ -123,7 +117,6 @@ PROGRAM laplace2d
         call MPI_Allreduce( error, globalerror, 1, MPI_REAL, MPI_MAX, MPI_COMM_WORLD, ierror )
         error = globalerror
         
-        !TODO: Split into halo and bulk part and start bulk part asynchronously in queue 1
         !$acc kernels
         DO iy = iy_start, iy_end
             DO ix = ix_start, ix_end
@@ -162,19 +155,25 @@ PROGRAM laplace2d
         END IF
         left = mpi_ranky * mpi_sizex + leftx
         right = mpi_ranky * mpi_sizex + rightx
-        !TODO: Start gathering from a_new before the a to a_new copy into async queue 2 and wait here for queue 2 to finish
         !$acc kernels
         DO iy = iy_start, iy_end
             to_left(iy) = a(ix_start,iy)
             to_right(iy) = a(ix_end,iy)
         END DO
         !$acc end kernels
+        !TODO: Send to_left to left, to_right to right, receive from_left from_left and from_right from right instead of copying
+        !$acc kernels
+        DO iy = iy_start, iy_end
+            from_right(iy) = to_left(iy)
+            from_left(iy) = to_right(iy)
+        END DO
+        !$acc end kernels
         !$acc host_data use_device( A )
-            !1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
-            CALL MPI_Sendrecv( to_left(iy_start), (iy_end-iy_start)+1, MPI_REAL, left   , 0, from_right(iy_start), (iy_end-iy_start)+1, MPI_REAL, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !TODO: 1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
+            !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
 
-            !2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
-            CALL MPI_Sendrecv( to_right(iy_start), (iy_end-iy_start)+1, MPI_REAL, right   , 0, from_left(iy_start), (iy_end-iy_start)+1, MPI_REAL, left, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !TODO: 2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
+            !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
         !$acc end host_data
         !$acc kernels
         DO iy = iy_start, iy_end
@@ -183,7 +182,6 @@ PROGRAM laplace2d
         END DO
         !$acc end kernels
 
-        !TODO: Wait for asynchronous operations to finish before starting the next iteration
         IF ( mpi_rank == 0 .AND. ( iter == 1 .OR. MOD( iter, 100 ) == 0 ) ) THEN
             WRITE(*,"('  ',I4,' ',F8.6)") iter, error
         END IF
@@ -204,4 +202,4 @@ PROGRAM laplace2d
     END IF
     !Finalize MPI
     CALL MPI_Finalize(ierror)
-END PROGRAM laplace2d
+END PROGRAM poisson2d
