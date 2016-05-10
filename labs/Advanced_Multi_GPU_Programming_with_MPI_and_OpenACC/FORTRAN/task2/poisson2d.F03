@@ -21,11 +21,11 @@ PROGRAM poisson2d
     INTEGER, PARAMETER :: iter_max = 1000
     REAL, PARAMETER :: tol = 1.0E-5
     INTEGER :: ix, iy, ix_start, ix_end, iy_start, iy_end, iter, mpi_rank, mpi_rankx, mpi_ranky, mpi_size, mpi_sizex, mpi_sizey, device_type, ngpus, devicenum, ierror
-    INTEGER :: chunk_sizex, chunk_sizey, top, bottom, topy, bottomy, right, left, rightx, leftx
+    INTEGER :: chunk_sizex, chunk_sizey, top, bottom, topx, bottomx, right, left, righty, lefty
     REAL :: x,y, error, runtime_serial, runtime, start, finish, globalerror
     LOGICAL, EXTERNAL :: check_results
     REAL, DIMENSION(nx,ny) :: a, a_ref, a_new, rhs
-    REAL, DIMENSION(ny) :: to_left, from_left, to_right, from_right
+    REAL, DIMENSION(ny) :: to_top, from_top, to_bottom, from_bottom
     
     mpi_rank = 0
     mpi_size = 1
@@ -127,24 +127,24 @@ PROGRAM poisson2d
         !$acc end kernels
         
         !Handle periodic boundary conditions and halo exchange with MPI
-        topy = mpi_ranky-1
+        lefty = mpi_ranky-1
         IF ( mpi_ranky == 0 ) THEN
-            topy = mpi_sizey-1
+            lefty = mpi_sizey-1
         END IF
-        bottomy = mpi_ranky+1
+        righty = mpi_ranky+1
         IF ( mpi_ranky == mpi_sizey-1 ) THEN
-            bottomy = 0
+            righty = 0
         END IF
         !TODO: map topy,bottomy back to 1D MPI ranks
-        top = topy
-        bottom = bottomy
+        left = lefty
+        right = righty
         
         !$acc host_data use_device( A )
-            !1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end+1) from bottom
-            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, top   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !1. Sent column iy_start (first modified column) to left receive right boundary (iy_end+1) from right
+            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, left   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
 
-            !2. Sent row iy_end (last modified row) to bottom receive upper boundary (iy_start-1) from top
-            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, top   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !2. Sent column iy_end (last modified column) to right receive left boundary (iy_start-1) from left
+            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, right, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, left   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
         !$acc end host_data
         
         !$acc kernels

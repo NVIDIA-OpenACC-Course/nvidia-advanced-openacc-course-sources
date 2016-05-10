@@ -21,11 +21,11 @@ PROGRAM poisson2d
     INTEGER, PARAMETER :: iter_max = 1000
     REAL, PARAMETER :: tol = 1.0E-5
     INTEGER :: ix, iy, ix_start, ix_end, iy_start, iy_end, iter, mpi_rank, mpi_rankx, mpi_ranky, mpi_size, mpi_sizex, mpi_sizey, device_type, ngpus, devicenum, ierror
-    INTEGER :: chunk_sizex, chunk_sizey, top, bottom, topy, bottomy, right, left, rightx, leftx
+    INTEGER :: chunk_sizex, chunk_sizey, top, bottom, topx, bottomx, right, left, righty, lefty
     REAL :: x,y, error, runtime_serial, runtime, start, finish, globalerror
     LOGICAL, EXTERNAL :: check_results
     REAL, DIMENSION(nx,ny) :: a, a_ref, a_new, rhs
-    REAL, DIMENSION(ny) :: to_left, from_left, to_right, from_right
+    REAL, DIMENSION(ny) :: to_top, from_top, to_bottom, from_bottom
     
     mpi_rank = 0
     mpi_size = 1
@@ -126,59 +126,59 @@ PROGRAM poisson2d
         !$acc end kernels
         
         !Handle periodic boundary conditions and halo exchange with MPI
-        topy = mpi_ranky-1
+        lefty = mpi_ranky-1
         IF ( mpi_ranky == 0 ) THEN
-            topy = mpi_sizey-1
+            lefty = mpi_sizey-1
         END IF
-        bottomy = mpi_ranky+1
+        righty = mpi_ranky+1
         IF ( mpi_ranky == mpi_sizey-1 ) THEN
-            bottomy = 0
+            righty = 0
         END IF
-        top = topy * mpi_sizex + mpi_rankx
-        bottom = bottomy * mpi_sizex + mpi_rankx
+        left = lefty * mpi_sizex + mpi_rankx
+        right = righty * mpi_sizex + mpi_rankx
         
         !$acc host_data use_device( A )
-            !1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end+1) from bottom
-            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, top   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !1. Sent column iy_start (first modified column) to left receive right boundary (iy_end+1) from right
+            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, left   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
 
-            !2. Sent row iy_end (last modified row) to bottom receive upper boundary (iy_start-1) from top
-            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, top   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !2. Sent column iy_end (last modified column) to right receive left boundary (iy_start-1) from left
+            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, right, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, left   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
         !$acc end host_data
         
-        leftx = mpi_rankx-1
+        topx = mpi_rankx-1
         IF ( mpi_rankx == 0 ) THEN
-            leftx = mpi_sizex-1
+            topx = mpi_sizex-1
         END IF
-        rightx = mpi_rankx+1
+        bottomx = mpi_rankx+1
         IF ( mpi_rankx == mpi_sizex-1 ) THEN
-            rightx = 0
+            bottomx = 0
         END IF
-        left = mpi_ranky * mpi_sizex + leftx
-        right = mpi_ranky * mpi_sizex + rightx
+        top = mpi_ranky * mpi_sizex + topx
+        bottom = mpi_ranky * mpi_sizex + bottomx
         !$acc kernels
         DO iy = iy_start, iy_end
-            to_left(iy) = a(ix_start,iy)
-            to_right(iy) = a(ix_end,iy)
+            to_top(iy) = a(ix_start,iy)
+            to_bottom(iy) = a(ix_end,iy)
         END DO
         !$acc end kernels
-        !TODO: Send to_left to left, to_right to right, receive from_left from_left and from_right from right instead of copying
+        !TODO: Send to_top to top, to_bottom to bottom, receive from_top from top and from_bottom from bottom instead of copying
         !$acc kernels
         DO iy = iy_start, iy_end
-            from_right(iy) = to_left(iy)
-            from_left(iy) = to_right(iy)
+            from_bottom(iy) = to_top(iy)
+            from_top(iy) = to_bottom(iy)
         END DO
         !$acc end kernels
         !$acc host_data use_device( A )
-            !TODO: 1. Sent to_left starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_right from right 
+            !TODO: 1. Sent to_top starting from first modified row (iy_start) to last modified row to top and receive the same rows into from_bottom from bottom
             !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
 
-            !TODO: 2. Sent to_right starting from first modified row (iy_start) to last modified row to left and receive the same rows into from_left from left
+            !TODO: 2. Sent to_bottom starting from first modified row (iy_start) to last modified row to bottom and receive the same rows into from_top from top
             !CALL MPI_SENDRECV(SENDBUF, SENDCOUNT, SENDTYPE, DEST, SENDTAG, RECVBUF, RECVCOUNT, RECVTYPE, SOURCE, RECVTAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror)
         !$acc end host_data
         !$acc kernels
         DO iy = iy_start, iy_end
-            a(ix_start-1,iy) = from_left(iy)
-            a(ix_end+1,iy) = from_right(iy)
+            a(ix_start-1,iy) = from_top(iy)
+            a(ix_end+1,iy) = from_bottom(iy)
         END DO
         !$acc end kernels
 

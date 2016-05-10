@@ -20,7 +20,7 @@ PROGRAM poisson2d
     INTEGER, PARAMETER :: ny = 4096
     INTEGER, PARAMETER :: iter_max = 1000
     REAL, PARAMETER :: tol = 1.0E-5
-    INTEGER :: ix, iy, ix_start, ix_end, iy_start, iy_end, iter, mpi_rank, mpi_size, device_type, ngpus, devicenum, ierror, chunk_size, top, bottom
+    INTEGER :: ix, iy, ix_start, ix_end, iy_start, iy_end, iter, mpi_rank, mpi_size, device_type, ngpus, devicenum, ierror, chunk_size, right, left
     REAL :: x,y, error, runtime_serial, runtime, start, finish, globalerror
     LOGICAL, EXTERNAL :: check_results
     REAL, DIMENSION(nx,ny) :: a, a_ref, a_new, rhs
@@ -115,21 +115,21 @@ PROGRAM poisson2d
         !TODO: Start bulk part asynchronously
         
         !Handle periodic boundary conditions and halo exchange with MPI
-        top = mpi_rank-1
+        left = mpi_rank-1
         IF ( mpi_rank == 0 ) THEN
-            top = mpi_size-1
+            left = mpi_size-1
         END IF
-        bottom = mpi_rank+1
+        right = mpi_rank+1
         IF ( mpi_rank == mpi_size-1 ) THEN
-            bottom = 0
+            right = 0
         END IF
         
         !$acc host_data use_device( A )
-            !1. Sent row iy_start (first modified row) to top receive lower boundary (iy_end+1) from bottom
-            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, top   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !1. Sent column iy_start (first modified column) to left receive right boundary (iy_end+1) from right
+            CALL MPI_Sendrecv( a(ix_start,iy_start), (ix_end-ix_start)+1, MPI_REAL, left   , 0, a(ix_start,iy_end+1), (ix_end-ix_start)+1, MPI_REAL, right, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
 
-            !2. Sent row iy_end (last modified row) to bottom receive upper boundary (iy_start-1) from top
-            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, bottom, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, top   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
+            !2. Sent column iy_end (last modified column) to right receive left boundary (iy_start-1) from left
+            CALL MPI_Sendrecv( a(ix_start,iy_end), (ix_end-ix_start)+1, MPI_REAL, right, 0, a(ix_start,(iy_start-1)), (ix_end-ix_start)+1, MPI_REAL, left   , 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE, ierror )
         !$acc end host_data
         
         !TODO: wait for bulk part
